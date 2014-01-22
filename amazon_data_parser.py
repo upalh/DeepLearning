@@ -10,7 +10,7 @@ separate out the different records.
  
 To customize this for other datasets, we can construct a schema for the
 data and if the data is ordered properly, this file will take the original
-dataset and construct a comma separated version of the fields of interest,
+dataset and construct a JSON version of the fields of interest,
 where each line represents a record.
 
 The resulting file can then be used by hadoop to further pre-process and

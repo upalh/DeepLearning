@@ -1,4 +1,14 @@
 """
+File to do some simple plotting on the number of purchase distributions
+over the products.  The data that I used for the plots were not checked in
+because they're too big for the repo.
+
+From the plot, one can see that the distribution decreases exponentially
+as the number of purchases for a given product increases.  The structure
+of this plot is very similar to the distributions of number of users that
+have purchased something.  So most users have bought few products, but few
+have bought a lot.
+
 Created on Mon Jan 20 07:50:52 2014
 
 @author: ubuntu
@@ -9,9 +19,11 @@ import sys
 import pylab as pl
 
 # this will dictate how many bars we've got. based on the data,
-# the number of purchases for any given product ranges from 0 - 99, so
+# the number of purchases for most products ranges from 0 - 99, so
 # i just have a 100 buckets. each bucket will store a count of the number
 # of products that have been bought X times, where X varies from 0 - 99.
+# for anything where the number of products that have been bought exceeds
+# 99, i dump them all into the last bucket.
 NUM_BUCKETS = 100
 
 if __name__ == "__main__":

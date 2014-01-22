@@ -1,0 +1,42 @@
+{
+   "datasetPath": "amazon-meta.txt",
+   "multiline": "true",
+   "betweenRecordDelimiter": "\r\n",
+   "skipLines": 3,
+   "betweenKeyValDelimiter": ":",
+    "fields": {
+	    "Id": {
+     		   "type": "numeric",
+		   "keep": "true"
+	    },
+    	    "ASIN": {
+		   "type": "string",
+		   "keep": "true"
+	    },
+	    "title": {
+		   "type": "string",
+		   "keep": "true"
+	    },
+	    "group": {
+		   "type": "string"
+	    },
+	    "salesrank": {
+     		   "type": "numeric"
+	     },
+    	    "similar": {
+		   "type": "list",
+		   "hasLength": "true",
+		   "element_type": "numeric",
+		   "firstDelimiter": "\\s+",
+		   "keep": "true"
+	    },
+    	    "reviews": {
+		   "hasLength": "true",
+		   "type": "list-multiline",
+		   "element_type": "string",
+		   "firstDelimiter": ":\\s+",
+		   "keep":"true",
+		   "keepIndicies": "1"
+	    }    
+	}
+}

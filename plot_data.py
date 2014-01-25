@@ -31,7 +31,7 @@ if __name__ == "__main__":
     if(len(sys.argv)>1):
         path_to_file = sys.argv[1]
     else:
-        path_to_file = "numPurchaseDistributions"
+        path_to_file = "../data/amazon/numPurchaseDistributions"
 
     # create our label vectors
     labels = []

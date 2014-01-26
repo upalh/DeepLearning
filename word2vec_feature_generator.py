@@ -6,6 +6,10 @@ it will write out the pair <customerId, productASIN>. So basially, we're
 assuming that everyone that's written a review for the current product
 also bought all the similar products too.
 
+The script can also be used to create feature vectors in the opposite 
+direction. That is for each product, map it to all the customers that have
+bought it. 
+
 Example format:
     "key_A2YD21XOPJ966C"       "['0790747324', '6305350221']"
     

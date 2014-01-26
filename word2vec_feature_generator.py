@@ -7,81 +7,86 @@ assuming that everyone that's written a review for the current product
 also bought all the similar products too.
 
 Example format:
-    "customer_A2YD21XOPJ966C"       "['0790747324', '6305350221']"
+    "key_A2YD21XOPJ966C"       "['0790747324', '6305350221']"
     
 Example command:
-    python word2vec_feature_generator.py -r local --customer reviews 
-        --similar similar --product ASIN --customer_index 0 
+    python word2vec_feature_generator.py -r local --primary_key reviews 
+        --value_key similar --meta_key_key ASIN --primary_index 0 
             ../data/amazon/amazon-meta_preprocessed.out > features_for_word2vec
 
+    python word2vec_feature_generator.py -r local --primary_key similar 
+        --value_key reviews --meta_key_key ASIN --value_index 0 
+            ../data/amazon/test.out > word2vec_features_value_to_key
 
 Created on Thu Jan 23 06:57:00 2014
 
 @author: Upal Hasan
 """
-
+import sys
 import json
 from mrjob.job import MRJob
 
+DEFAULT_KEY_MAPPING = "key"
+    
 class FeatureGenerator(MRJob):
 
     def configure_options(self):
         super(FeatureGenerator, self).configure_options()
         self.add_passthrough_option(
-            '--customer', help="customer key")
+            '--primary_key', help="primary key to perform the mapping over.")
         self.add_passthrough_option(
-            '--customer_index', help="customer index within customer array.")                        
+            '--primary_index', help="if primary key is list, which index should be the key.")                        
         self.add_passthrough_option(
-            '--product', help="product key (ASIN).")           
+            '--meta_key_key', help="key for a metadata to be included in the mapping to primary_key list.")           
         self.add_passthrough_option(
-            '--similar', help="similar product key.")            
-    
-        
-    def mapper(self, _, line):
-        productKey = self.options.product
-        customerKey = self.options.customer
-        customerIdx = int(self.options.customer_index)        
-        similarKey = self.options.similar
-        
-        parsedLine = json.loads(line)        
-        
-        if customerKey in parsedLine and productKey in parsedLine \
-            and similarKey in parsedLine:
+            '--meta_key_value', help="key for a metadata to be included in the mapping to value_key list.")                       
+        self.add_passthrough_option(
+            '--value_key', help="value key that primary_key will use to map to.")                    
+        self.add_passthrough_option(
+            '--value_index', help="if value key is list, which index should be the value.")                        
+            
                             
-            customerList = parsedLine[customerKey]
-            product = parsedLine[productKey]
-            similarItems = parsedLine[similarKey]
-            
-            similarItems.append(product)
-            if customerList:
-                for customer in customerList:
-                    for item in similarItems:
-                        yield "customer_" + customer[customerIdx], item                  
-        
-    def reducer(self, key, values):
-        yield key, str(list(values))
-
-class FeatureMetadataGenerator(MRJob):
-
-    def configure_options(self):
-        super(FeatureGenerator, self).configure_options()
-        self.add_passthrough_option(
-            '--product', help="product key (ASIN).")
-        self.add_passthrough_option(
-            '--title', help="title key.")            
-        
     def mapper(self, _, line):
-        productKey = self.options.product
-        titleKey = self.options.title
+        metaKeyKey = self.options.meta_key_key
+        metaKeyValue = self.options.meta_key_value                
+        primaryIdx = int(self.options.primary_index) if self.options.primary_index else None
+        primaryKey = self.options.primary_key
+        valueKey = self.options.value_key
+        valueIdx = int(self.options.value_index) if self.options.value_index else None
         
         parsedLine = json.loads(line)        
         
-        if productKey in parsedLine and titleKey in parsedLine:                            
-            product = parsedLine[productKey]
-            title = parsedLine[titleKey]
+        if primaryKey in parsedLine and \
+            (metaKeyKey in parsedLine or metaKeyValue in parsedLine) and \
+                valueKey in parsedLine:
+                            
+            metaKey = metaKeyKey if metaKeyKey else metaKeyValue                            
+            keys = parsedLine[primaryKey]
+            meta = parsedLine[metaKey]
+            values = parsedLine[valueKey]
             
-            yield product, title
-        
+            if metaKeyKey: 
+                keys.append(meta) 
+            else:
+                values.append(meta)
+
+            def extract_key_value(key, keyIdx, prefix):        
+                if type(key) == list:
+                    if type(keyIdx) != int:
+                        raise Exception("Id index for key must be a valid integer for key " + str(key))
+                    keyElement = key[keyIdx]
+                else:
+                    keyElement = key
+                    
+                return prefix + keyElement
+
+            for key in keys:
+                for value in values:            
+                    writableKey = extract_key_value(key, primaryIdx, "key_")                    
+                    writableValue = extract_key_value(value, valueIdx, "")                    
+                                        
+                    yield writableKey, writableValue
+            
     def reducer(self, key, values):
         yield key, str(list(values))
         

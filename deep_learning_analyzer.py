@@ -94,7 +94,7 @@ def plot_learned_vectors(wgtMatrixPath, model):
         vectorDim = fileHandle.readline().rstrip().split(" ")[1]
         vectorList = map(lambda x : x.rstrip().split(" ")[0], fileHandle.readlines())
         
-    words = vectorList[:100]
+    words = vectorList[:200]
     
     if not words or int(vectorDim) != 2:
         print "vector list empty or not proper dimension."
@@ -120,6 +120,51 @@ def plot_learned_vectors(wgtMatrixPath, model):
     for i, txt in enumerate(annotations):
         ax.annotate(txt, (xs[i], ys[i]))
     plt.show()
+    
+def plot_entire_feature_vectors(keys, features, model, wgtMatrixPath):
+    """Function to help us understand what was learned by plotting
+        the new representations of the sentences, which now is a word of
+        words.
+        
+        Args:
+            wgtMatrixPath : the features that were passed into word2vec.
+            model : the model learned by word2vec
+    """
+    with open(wgtMatrixPath, "r") as fileHandle:        
+        vectorDim = fileHandle.readline().rstrip().split(" ")[1]
+    
+    # extract out the words from the weight matrix file.        
+    sentences = features[:100]
+    colorMap = [random.uniform(0,1) for sentence in sentences]
+    
+    if int(vectorDim) != 2:
+        print "learned vectors not proper dimension."
+        return
+        
+    xs = []
+    ys = []
+    colors = []
+    fig, ax = plt.subplots()
+    
+    annotations = []
+    for i, sentence in enumerate(sentences):
+        for word in sentence:
+            try:        
+                w = model[word]
+                xs.append(w[0])
+                ys.append(w[1])
+                annotations.append(keys[i] + ":" + word)
+                colors.append(colorMap[i])
+            except:
+                continue
+        
+    ax.scatter(xs, ys, c=colors)
+    
+    # annotate the chart
+    for i, txt in enumerate(annotations):
+        ax.annotate(txt, (xs[i], ys[i]))
+    plt.show()
+    
     
     
 def get_model_path(path_to_feature_file):
@@ -170,4 +215,5 @@ if __name__ == "__main__":
         print "saved trained model..."
         print "time: " + str(time_diff/60.0) + " mins"
         
-    plot_learned_vectors(get_weight_matrix_path(path_to_file), model)
+    #plot_learned_vectors(get_weight_matrix_path(path_to_file), model)
+    plot_entire_feature_vectors(keys, features, model, get_weight_matrix_path(path_to_file))

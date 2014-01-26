@@ -21,6 +21,9 @@ Example command:
     python word2vec_feature_generator.py -r local --primary_key similar 
         --value_key reviews --meta_key_key ASIN --value_index 0 
             ../data/amazon/test.out > word2vec_features_value_to_key
+            
+    python word2vec_feature_generator.py -r local --primary_key ASIN 
+        --value_key similar ../data/amazon/test.out > word2vec_features_value_to_key            
 
 Created on Thu Jan 23 06:57:00 2014
 
@@ -60,19 +63,21 @@ class FeatureGenerator(MRJob):
         
         parsedLine = json.loads(line)        
         
-        if primaryKey in parsedLine and \
-            (metaKeyKey in parsedLine or metaKeyValue in parsedLine) and \
-                valueKey in parsedLine:
-                            
-            metaKey = metaKeyKey if metaKeyKey else metaKeyValue                            
-            keys = parsedLine[primaryKey]
-            meta = parsedLine[metaKey]
+        if primaryKey in parsedLine and valueKey in parsedLine:
+                   
+            primaryKeyElement = parsedLine[primaryKey]
+            keys =  primaryKeyElement if type(primaryKeyElement) == list else [primaryKeyElement]
             values = parsedLine[valueKey]
-            
-            if metaKeyKey: 
-                keys.append(meta) 
-            else:
-                values.append(meta)
+
+            # include the metadata if there are any
+            if metaKeyKey in parsedLine or metaKeyValue in parsedLine: 
+                metaKey = metaKeyKey if metaKeyKey else metaKeyValue                            
+                meta = parsedLine[metaKey]
+
+                if metaKeyKey: 
+                    keys.append(meta) 
+                else:
+                    values.append(meta)
 
             def extract_key_value(key, keyIdx, prefix):        
                 if type(key) == list:

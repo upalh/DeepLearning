@@ -27,6 +27,8 @@ Created on Sat Jan 25 05:44:22 2014
 import sys
 from gensim.models.word2vec import *
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
 
 DEFAULT_BASE_DIR = ""
     
@@ -38,8 +40,7 @@ def load_features(path_to_file, callback):
             path_to_file : path to the feature vectors file
             
         Return:
-            An array corresponding to the corresponding to a parsed record.
-            
+            An array corresponding to the corresponding to a parsed record.        
     """
     
     with open(path_to_file, "r") as fileHandle:
@@ -53,8 +54,9 @@ def load_features(path_to_file, callback):
             value = callback(record)
         
             yield value
+
     
-def plot_learned_vectors(wgtMatrixPath, model):
+def plot_learned_vectors2D(wgtMatrixPath, model):
     """Function to help us understand what was learned by plotting
         the new representations of the words in the sentences.
         
@@ -62,37 +64,20 @@ def plot_learned_vectors(wgtMatrixPath, model):
             wgtMatrixPath : path to the weight matrix path of learned vectors.
             model : the model learned by word2vec
     """
-    
-    # extract out the words from the weight matrix file.
     with open(wgtMatrixPath, "r") as fileHandle:        
-        vectorDim = fileHandle.readline().rstrip().split(" ")[1]
         vectorList = map(lambda x : x.rstrip().split(" ")[0], fileHandle.readlines())
         
     words = vectorList[:100]
     
-    if not words or int(vectorDim) != 2:
-        print "vector list empty or not proper dimension."
-        return
-        
-    xs = []
-    ys = []
+    data, annotations = get_sentence_data(wgtMatrixPath, model, 2, words)
     fig, ax = plt.subplots()
     
-    annotations = []
-    for word in words:
-        try:        
-            w = model[word]
-            xs.append(w[0])
-            ys.append(w[1])
-            annotations.append(word)
-        except:
-            continue
         
-    ax.scatter(xs, ys)
+    ax.scatter(data[0], data[1])
     
     # annotate the chart
     for i, txt in enumerate(annotations):
-        ax.annotate(txt, (xs[i], ys[i]))
+        ax.annotate(txt, (data[0][i], data[1][i]))
     plt.show()
 
 def preprocess_record(line):
@@ -101,7 +86,7 @@ def preprocess_record(line):
         key and value.
         
         Args:
-            The line of record that we're processing.
+            line : The line of record that we're processing.
             
         Returns:
             An array with the parsed elemets.
@@ -118,57 +103,130 @@ def preprocess_record(line):
     
     return key, valSplit
 
-def plot_entire_feature_vectors(model, path_to_file):
-    """Function to help us understand what was learned by plotting
-        the new representations of the sentences, which now is a word of
-        words.
+def get_sentence_data(wgtMatrixPath, model, dim, words):
+    """Function to extract out the feature vector dimension for a 
+        given sentence vector.
         
         Args:
-            wgtMatrixPath : the features that were passed into word2vec.
+            wgtMatrixPath : path to the weight matrix path of learned vectors.
             model : the model learned by word2vec
+            dim : the diension of the learned vectors
+            words : the set of wrods in a sentence
+
+        Return:
+            Returns the data vector which is a vector of dim vectors. So each
+            index corresponds to each dim dimension.
     """
     
-    wgtMatrixPath = get_weight_matrix_path(path_to_file)
     with open(wgtMatrixPath, "r") as fileHandle:        
         vectorDim = fileHandle.readline().rstrip().split(" ")[1]
+            
+    if int(vectorDim) != dim:
+        raise Exception("vector list empty or not proper dimension.")
 
+    # extract out the words from the weight matrix file.
+    data = [[] for i in range(0, dim)]        
+    annotations = []
+    for word in words:
+        try:        
+            w = model[word]
+            for i in range(0, len(w)):
+                data[i].append(w[i])                
+            annotations.append(word)
+        except:
+            continue
+            
+    return data, annotations
+
+def plot_entire_feature_vectors3D(model, path_to_file):
+    """Function to help us understand what was learned by plotting
+        the new representations of the sentences, which now is a word of
+        words. Plot a 3D representation of it.
+        
+        Args:
+            model : the model learned by word2vec
+            path_to_file : the path to the file that contains the features to
+                be fed to word2vec.
+            
+    """
+    num_sentences_to_plot = 1000
+    num_dimensions = 3
+    data, annotations = get_sentences_data(path_to_file, num_sentences_to_plot, 
+                                          num_dimensions, model)
+
+    fig = plt.figure()
+    ax = Axes3D(fig)
+              
+    ax.scatter(data[0], data[1], data[2], c=range(0, len(data[0])))    
+    plt.show()
+
+def get_sentences_data(path_to_file, num_sentences_to_plot, dim, model):
+    """Function to get extracted vector representations for all the 
+        sentences. For each sentence it calls get_sentence_data to
+        get the data for each sentence and then appends them together.
+
+        Args:
+            path_to_file : path to the file representing features to be passed
+                into word2vec.
+            num_sentences_to_plot : the number of sentences that we will plot,
+                where each sentence is a vector of vectors representation for
+                a given line in path_to_file.
+            dim : the number of dimensions for each leanred vector.
+            model : the model learned by word2vec
+
+
+        Return:
+            Returns the data vector which is a vector of dim vectors. So each
+            index corresponds to each dim dimension.
+    """
+    
     keys = []
     sentences = []
     featureGenerator = load_features(path_to_file, preprocess_record)    
-    for i in range(0,10):
+    for i in range(0, num_sentences_to_plot):
         key, value = featureGenerator.next()                 
         
         keys.append(key)
         sentences.append(value)
-        
-    colorMap = [random.uniform(0,1) for sentence in sentences]
+
+    wgtMatrixPath = get_weight_matrix_path(path_to_file)
     
-    if int(vectorDim) != 2:
-        print "learned vectors not proper dimension."
-        return
-        
-    xs = []
-    ys = []
-    colors = []
-    fig, ax = plt.subplots()
-    
+    data = [[] for i in range(0, dim)]
     annotations = []
     for i, sentence in enumerate(sentences):
-        for word in sentence:
-            try:        
-                w = model[word]
-                xs.append(w[0])
-                ys.append(w[1])
-                annotations.append(keys[i] + ":" + word)
-                colors.append(colorMap[i])
-            except:
-                continue
+        sentenceData, sentenceAnnotations = get_sentence_data(wgtMatrixPath,
+            model, dim, sentence)
         
-    ax.scatter(xs, ys, c=colors)
+        for j in range(0,dim):
+            data[j].extend(sentenceData[j])
+        annotations.extend(sentenceAnnotations)
+
+    return data, annotations
+    
+def plot_entire_feature_vectors2D(model, path_to_file):
+    """Function to help us understand what was learned by plotting
+        the new representations of the sentences, which now is a word of
+        words. Plot a 2D version of it.
+        
+        Args:
+            model : the model learned by word2vec
+            path_to_file : the path to the file that contains the features to
+                be fed to word2vec.
+            
+    """
+    num_dimensions = 2
+    num_sentences_to_plot = 10
+    
+    data, annotations = get_sentences_data(path_to_file, num_sentences_to_plot, 
+                                          num_dimensions, model)
+        
+    fig, ax = plt.subplots()
+        
+    ax.scatter(data[0], data[1], s=100, c=range(0,len(data[0])))
     
     # annotate the chart
     for i, txt in enumerate(annotations):
-        ax.annotate(txt, (xs[i], ys[i]))
+        ax.annotate(txt, (data[0][i], data[1][i]))
     plt.show()
     
     
@@ -195,7 +253,19 @@ def get_weight_matrix_path(path_to_feature_file):
     """    
     return os.path.join(DEFAULT_BASE_DIR, os.path.basename(path_to_feature_file).split(".")[0] + "_weight.out")    
 
-def train_model(path_to_file):
+def train_model(path_to_file, size, window):
+    """Function to train thd deep learning model.
+    
+        Args:
+            path_to_file : path to the file that contains features to feed 
+                into Word2Vec.
+            size : size of the learned vectors for Word2Vec
+            window : size of window for Word2Vec
+            
+        Returns:
+            A learned model by Word2Vec.
+    """
+    
     print "training model..."        
     time_start = time.time()
     
@@ -204,7 +274,7 @@ def train_model(path_to_file):
         key, value = preprocess_record(line)        
         return value
     
-    model = Word2Vec(load_features(path_to_file, preprocess), size=2, window=5, min_count=5, workers=4)
+    model = Word2Vec(load_features(path_to_file, preprocess), size=size, window=window, min_count=5, workers=4)
     model.save(get_model_path(path_to_file))
     model.save_word2vec_format(get_weight_matrix_path(path_to_file))    
     time_end = time.time()
@@ -230,7 +300,8 @@ if __name__ == "__main__":
         print "loaded existing model..."
     else:   
         # now dump into word2vec
-        model = train_model(path_to_file)
+        model = train_model(path_to_file, 2, 5)
         
-    #plot_learned_vectors(get_weight_matrix_path(path_to_file), model)
-    plot_entire_feature_vectors(model, path_to_file)
+    #plot_learned_vectors2D(get_weight_matrix_path(path_to_file), model)
+    plot_entire_feature_vectors2D(model, path_to_file)
+    #plot_entire_feature_vectors3D(model, path_to_file)

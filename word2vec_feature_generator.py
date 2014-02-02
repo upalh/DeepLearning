@@ -90,11 +90,13 @@ class FeatureGenerator(MRJob):
                 return prefix + keyElement
 
             for key in keys:
+                if type(values) != list:
+                    values = [values]
                 for value in values:            
-                    writableKey = extract_key_value(key, primaryIdx, "key_")                    
+                    writableKey = extract_key_value(key, primaryIdx, "")                    
                     writableValue = extract_key_value(value, valueIdx, "")                    
                                         
-                    yield writableKey, writableValue
+                    yield writableKey, writableValue                    
             
     def reducer(self, key, values):
         yield key, str(list(values))

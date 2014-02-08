@@ -39,7 +39,8 @@ class AmazonDataAnalyzer(MRJob):
     def mapper(self, _, line):
         productKey = self.options.product
         customerKey = self.options.customer
-        customerIdx = int(self.options.customer_index)        
+        customerIdx = int(self.options.customer_index) \
+            if self.options.customer_index else None       
         similarKey = self.options.similar
         metric = int(self.options.metric)
         

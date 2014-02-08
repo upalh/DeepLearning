@@ -358,14 +358,38 @@ def train_model(path_to_file, size, window, min_count):
     print "time: " + str(time_diff/60.0) + " mins"
 
     return model
+    
+def debug_training_vectors(asinTitlePath, path_to_file):
 
-def print_simliar_words(asinTitlePath, wgtMatrixPath, model):
+    products = obtain_key_title_mapping(asinTitlePath)
+    
+    # helper function to help preprocess a piece of text
+    def preprocess(line):
+        key, value = preprocess_record(line)        
+        return value
+    
+    feature_generator = load_features(path_to_file, preprocess)
+    for i in range(0, 100):    
+        feature_vector = feature_generator.next()
+        print "[",
+        for feature in feature_vector:
+            if feature in products:
+                print products[feature] + ",",
+        print "]"
 
+def obtain_key_title_mapping(asinTitlePath):
+    
     products = dict()
     for line in open(asinTitlePath, "r"):       
         line = line.replace('"',"")
         key, value = line.rstrip().split("\t")
         products[key] = value
+
+    return products
+    
+def print_simliar_words(asinTitlePath, wgtMatrixPath, model):
+
+    products = obtain_key_title_mapping(asinTitlePath)
         
     with open(wgtMatrixPath, "r") as fileHandle:        
         vectorDim = fileHandle.readline()
@@ -400,8 +424,9 @@ if __name__ == "__main__":
         model = Word2Vec.load_word2vec_format(get_weight_matrix_path(path_to_file), binary=False)
     else:   
         # now dump into word2vec
-        model = train_model(path_to_file, 500, 5, 5)
+        model = train_model(path_to_file, 100, 5, 2)
      
+   # debug_training_vectors(get_asin_to_title_path(path_to_file), path_to_file)
     print_simliar_words(get_asin_to_title_path(path_to_file), get_weight_matrix_path(path_to_file), model)     
     #cluster_sentence_vectors(model, path_to_file, 3) 
     #reduce_dimension_and_plot(get_weight_matrix_path(path_to_file))

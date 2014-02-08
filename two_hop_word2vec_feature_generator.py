@@ -19,62 +19,12 @@ to the edges.  The second job percolates the information up to the senders.
 Once the edges have been swapped, we can then combine the results via the
 final reducer.
 
-Here's a quick walkthru of the algorithm.
-
-Input:
-z       [a,b,c,d]
-a       [e]
-b       [f]
-c       [g]
-d       [h]
-
-mapper1:
-z       ([a,b,c,d])
-a       (z, [b,c,d])
-b       (z, [a,c,d])
-d       (z, [a,b,c])
-
-a       ([e])
-b       ([f])
-c       ([g])
-d       ([h])
-
-reducer1:
-z       ([a,b,c,d])
-a       [([e]),(z, [b,c,d])]
-b       [([f]),(z, [a,c,d])]
-d       [([h]),(z, [a,b,c])]
-
-a       ([e])
-b       ([f])
-c       ([g])
-d       ([h])
-
-mapper2:
-z       ([a,b,c,d])
-z       ([e])
-z       ([f])
-z       ([h])
-
-a       ([e])
-b       ([f])
-c       ([g])
-d       ([h])
-
-reducer2:
-z       ([a,b,c,d],[e],[f],[h])
-a       ([e])
-b       ([f])
-c       ([g])
-d       ([h])
-
 Created on Fri Feb  7 22:11:59 2014
 
 @author: Upal Hasan
 
 """
 
-import sys
 from mrjob.job import MRJob
 
 class TwoHopFeatureGenerator(MRJob):

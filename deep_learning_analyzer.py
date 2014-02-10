@@ -327,6 +327,7 @@ def cluster_sentence_vectors(model, path_to_file, dim):
 
     print "clusters: " + str(final_labels)
     
+import json
 def train_model(path_to_file, size, window, min_count):
     """Function to train thd deep learning model.
     
@@ -347,8 +348,13 @@ def train_model(path_to_file, size, window, min_count):
     def preprocess(line):
         key, value = preprocess_record(line)        
         return value
+        
+    def preprocess_json(line):
+        record = json.loads(line)        
+        return record["similar"]
     
-    model = Word2Vec(load_features(path_to_file, preprocess), size=size, window=window, min_count=min_count, workers=4)
+    model = Word2Vec(load_features(path_to_file, preprocess_json), size=size, window=window, min_count=min_count, workers=4)
+    #model = Word2Vec(load_features(path_to_file, preprocess), size=size, window=window, min_count=min_count, workers=4)
     model.save(get_model_path(path_to_file))
     model.save_word2vec_format(get_weight_matrix_path(path_to_file))    
     time_end = time.time()
@@ -426,8 +432,8 @@ if __name__ == "__main__":
         # now dump into word2vec
         model = train_model(path_to_file, 100, 5, 2)
      
-   # debug_training_vectors(get_asin_to_title_path(path_to_file), path_to_file)
-    print_simliar_words(get_asin_to_title_path(path_to_file), get_weight_matrix_path(path_to_file), model)     
+    debug_training_vectors(get_asin_to_title_path(path_to_file), path_to_file)
+    #print_simliar_words(get_asin_to_title_path(path_to_file), get_weight_matrix_path(path_to_file), model)     
     #cluster_sentence_vectors(model, path_to_file, 3) 
     #reduce_dimension_and_plot(get_weight_matrix_path(path_to_file))
     #plot_learned_vectors2D(get_weight_matrix_path(path_to_file), model, 2)

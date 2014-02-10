@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
     # Now try to generate feature vectors by doing "depth charges" 
     of = open(path_to_output_file, "w")
+    i = 0
     for node in G.adj.keys():
     	adjacent = G.adj[node].keys()
     	q = Queue.Queue()
@@ -72,5 +73,8 @@ if __name__ == "__main__":
 	    					q.put(adj)
 	    					seen[adj] = True
 		validNeighbors.append(node)
+		if i % 10000 == 0:
+			print "Generated " + str(i) + " feature vectors"
     	of.write(json.dumps({"asin": node, "similar": validNeighbors}))
+    	i = i + 1
     of.close()

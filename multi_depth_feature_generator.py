@@ -53,28 +53,27 @@ if __name__ == "__main__":
     	adjacent = G.adj[node].keys()
     	q = Queue.Queue()
     	seen = {}
-    	validNeighbors = []
+    	validNeighbors = [node]
     	for adj in adjacent:
     		q.put(adj)
     		seen[adj] = True
 
     	MAX_SIMILARS_PER_DOC = 25
-    	while not q.empty():
+
+    	while not q.empty() and len(validNeighbors) < MAX_SIMILARS_PER_DOC:
     		curr = q.get()
     		# add all the similars that have a valid node in the graph:
     		if curr in G.node:
     			validNeighbors.append(curr)
-
     			#If we haven't reached threshold of neighbors add any neighbors into the graph
-    			if(len(validNeighbors) < MAX_SIMILARS_PER_DOC):
-	    			nextNeighbors = G.adj[curr].keys()
-	    			for adj in nextNeighbors:
-	    				if adj not in seen:
-	    					q.put(adj)
-	    					seen[adj] = True
-		validNeighbors.append(node)
-		if i % 10000 == 0:
-			print "Generated " + str(i) + " feature vectors"
-    	of.write(json.dumps({"asin": node, "similar": validNeighbors}))
+    			nextNeighbors = G.adj[curr].keys()
+    			for adj in nextNeighbors:
+    				if adj not in seen:
+    					q.put(adj)
+    					seen[adj] = True
+		
+        if i % 10000 == 0:
+            print "Generated " + str(i) + " feature vectors"
+    	of.write(json.dumps({"asin": node, "similar": validNeighbors})+"\n")
     	i = i + 1
     of.close()

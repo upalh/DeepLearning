@@ -344,6 +344,21 @@ def handle_multi_line_list(key, value, valueDelimiter, fieldSchema, fileHandle, 
     i = 0 
     arrayElements = []       
     length = int(get_list_length(key, value))
+    
+    """
+        TODO: create dictionary to hold metadata and then create
+        an entry for "reviews_list" that will hold a list of 
+        dictionaries for each category. 
+        
+        The decision to load the metadata is given by the schema
+        "hasMetadata" attribute for the multi-line-list
+        
+        So in the end, we have dict["reviews"]["downloaded"] or
+        dict["reviews"]["reviews_list"][0]["customer"]
+        
+        Make extract_key_value an overridable method that enables users
+        to override how to parse the list out.
+    """
         
     while i < length:
         element = read_line(fileHandle)

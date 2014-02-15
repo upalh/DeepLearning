@@ -30,6 +30,14 @@
 		   "firstDelimiter": "\\s+",
 		   "keep": "true"
 	    },
+	    "categories": {
+		   "hasLength": "true",
+		   "type": "list-multiline",
+		   "element_type": "string",
+		   "firstDelimiter": "|",
+		   "keep":"true",
+		   "keepIndicies": "1"
+	    },
     	    "reviews": {
 		   "hasLength": "true",
 		   "type": "list-multiline",

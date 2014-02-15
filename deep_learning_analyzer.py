@@ -26,6 +26,7 @@ Created on Sat Jan 25 05:44:22 2014
 
 import sys, os, time
 import numpy
+import json
 import matplotlib.pyplot as plt
 
 from gensim.models.word2vec import Word2Vec
@@ -327,7 +328,6 @@ def cluster_sentence_vectors(model, path_to_file, dim):
 
     print "clusters: " + str(final_labels)
     
-import json
 def train_model(path_to_file, size, window, min_count):
     """Function to train thd deep learning model.
     
@@ -373,8 +373,13 @@ def debug_training_vectors(asinTitlePath, path_to_file):
     def preprocess(line):
         key, value = preprocess_record(line)        
         return value
+
+    def preprocess_json(line):
+        record = json.loads(line)        
+        return record["similar"]
     
-    feature_generator = load_features(path_to_file, preprocess)
+    #feature_generator = load_features(path_to_file, preprocess)
+    feature_generator = load_features(path_to_file, preprocess_json)
     for i in range(0, 100):    
         feature_vector = feature_generator.next()
         print "[",
@@ -401,7 +406,7 @@ def print_simliar_words(asinTitlePath, wgtMatrixPath, model):
         vectorDim = fileHandle.readline()
         vectorList = map(lambda x : x.rstrip().split(" ")[0], fileHandle.readlines())
 
-    words = vectorList[:10000]
+    words = vectorList[:100]
     for word in words:
         if word not in model or word not in products:
             continue
@@ -430,10 +435,10 @@ if __name__ == "__main__":
         model = Word2Vec.load_word2vec_format(get_weight_matrix_path(path_to_file), binary=False)
     else:   
         # now dump into word2vec
-        model = train_model(path_to_file, 100, 5, 2)
+        model = train_model(path_to_file, 175, 500, 0) #150/25
      
-    debug_training_vectors(get_asin_to_title_path(path_to_file), path_to_file)
-    #print_simliar_words(get_asin_to_title_path(path_to_file), get_weight_matrix_path(path_to_file), model)     
+    #debug_training_vectors(get_asin_to_title_path(path_to_file), path_to_file)
+    print_simliar_words(get_asin_to_title_path(path_to_file), get_weight_matrix_path(path_to_file), model)     
     #cluster_sentence_vectors(model, path_to_file, 3) 
     #reduce_dimension_and_plot(get_weight_matrix_path(path_to_file))
     #plot_learned_vectors2D(get_weight_matrix_path(path_to_file), model, 2)

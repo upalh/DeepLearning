@@ -267,8 +267,9 @@ def read_record(fileHandle, readLineCallback, schema, multiline, delim):
                  record[lineSplit[0]] = handle_single_line_list(lineSplit[1], 
                     valueDelimiter, fieldSchema, hasLength)
              elif valueType == "list-multiline":
-                 record[lineSplit[0]] = handle_multi_line_list(lineSplit[1], 
-                    valueDelimiter, fieldSchema, fileHandle, hasLength)             
+                 record[lineSplit[0]] = handle_multi_line_list(lineSplit[0],
+                    lineSplit[1], valueDelimiter, fieldSchema, fileHandle, 
+                    hasLength)             
              else:
                  record[lineSplit[0]] = lineSplit[1]                  
         except Exception:
@@ -297,19 +298,23 @@ def extract_key_value(lineSplit, schema):
     
     indiciesToRetain = get_schema_value_for_key(schema, "keepIndicies")
     indiciesSplit = indiciesToRetain.split(",") if indiciesToRetain else None
-    
-    values = []
+
+    values = []    
+    def post_process_and_store(val):
+        elementToStore = post_process_element(val)
+        if elementToStore:
+            values.append(elementToStore)
+        
     if indiciesSplit is None:
         for idx,val in enumerate(lineSplit):
-            values.append(post_process_element(val))
+            post_process_and_store(val)
     else:
         for idx,val in enumerate(lineSplit):
             if str(idx) in indiciesSplit:
-                values.append(post_process_element(val))
-                
+                post_process_and_store(val)                
     return values
         
-def handle_multi_line_list(value, valueDelimiter, fieldSchema, fileHandle, hasLength):    
+def handle_multi_line_list(key, value, valueDelimiter, fieldSchema, fileHandle, hasLength):    
     """This method will properly parse a multi-line list of lists, where
         we define the number of lists on the first line and then list
         each individual list afterwards.
@@ -338,7 +343,7 @@ def handle_multi_line_list(value, valueDelimiter, fieldSchema, fileHandle, hasLe
     
     i = 0 
     arrayElements = []       
-    length = int(get_list_length(value))
+    length = int(get_list_length(key, value))
         
     while i < length:
         element = read_line(fileHandle)
@@ -515,7 +520,7 @@ def is_done(line, delim):
     
     return line == delim
 
-def get_list_length(value):
+def get_list_length(key, value):
     """This function enables the user to customize how to parse the values
         of the initial multiline list entry to get the number of inner
         lists. This was too hard to generalize, so it might be best to just
@@ -534,7 +539,12 @@ def get_list_length(value):
     lineSplit = map(preprocess, [y for y in re.split("\s+", value)])
 
     if lineSplit:
-        return int(lineSplit[3])
+        if key == "reviews":
+            return int(lineSplit[3])
+        elif key == "categories":
+            return int(lineSplit[0])
+        else:
+            raise Exception("list length '" + key + "' parser not supported")            
         
 def post_process_element(value):
     """This function enables the user to customize how to parse a value

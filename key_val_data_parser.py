@@ -53,25 +53,81 @@ specifies the fields of interest.
         		  "firstDelimiter": "\\s+",
         		  "keep": "true"
         	    },
-             "reviews": {
-        		  "hasLength": "true",
-        		  "type": "list-multiline",
-        		  "element_type": "string",
-        		  "firstDelimiter": ":\\s+",
-        		  "keep":"true",
-        		  "keepIndicies": "1"
-        	    }    
+              "categories": {
+                   "hasLength": "true",
+                   "type": "list-multiline",
+                   "element_type": "string",
+                   "firstDelimiter": "\\|",
+                   "keep": "true"
+              },
+              "reviews": {
+                   "hasLength": "true",
+                   "type": "list-multiline",
+                   "hasMetadata": "true",
+                   "lengthFieldName": "downloaded",
+                   "element_type": "string",
+                   "firstDelimiter": ":\\s+",
+                   "secondDelimiter": "\\s+",
+                   "missingKeyIndex": "0",
+                   "missingKeyName": "date",
+                   "listType": "key_val",
+                   "keep": "true"
+            }  
         }
     }
 
 For fields which are of type "list" or "list-multiline" a user must
 specify the "firstDelimiter" attribute.  This specifies how the elements
-are separated.  In an inline list, where all the elements are on one line,
+are separated.  For inline list, where all the elements are on one line,
 we have to tell the parser how they are separated, so we can split them up.
-The firstDelimiter can be a regular expression to help with that.  
+The "firstDelimiter" can be a regular expression to help with that.  
 
 The user can also specify which indicies to keep of that list by specifying
 the "keepIndicies" attribute.  The indicies must be comma spearated.
+
+For the list types, the user can also specify how the lists are formatted. 
+Currently the user can specify "key_val" for the "listType" attribute, which
+will assume that the list is formatted as a set of key-value pairs on a 
+single line delimited by by some value as specified through the "firstDelimiter"
+attribute.  However, by doing that, it may be necessary to further process the
+data, so support for a inner delimiter is provided once the data gets split
+by the first delimiter.  The second delimiter is specified by the 
+"secondDelimiter" attribute and can also be a regular expression.
+
+For example, the data 'total: 2  downloaded: 2  avg rating: 5' is a set of
+key-value pairs delimited by ":" but after the first split, we will also
+have to split by a " " to group the key-value pairs.
+
+Key-value lists are supported for both single-line lists or multi-line lists.
+For the default list types where only the "firstDelimiter" is defined to split
+out the list, they can also have a length defined in the beginning to indicate
+the number of elements.  That would be provided by the "hasLength"
+attribute set to "true" or "false."  This is not supported for key_val lists 
+types.
+
+In addition to lists of type "key_val", we can also have the list delimited by 
+"firstDelimiter" with no keys defined, only values.  This is the default list 
+type.  They may or may not define the "hasLength" attribute and things should
+run fine.
+
+Sometimes a multi-line list will have some metadata defined, one of which is
+the number of lines that constitute the list.  Support is provided for capturing
+the metadata by the "hasMetadata" attribute set to "true" or "false."  If it
+is set to "true", it is assumed that the metadata will be key-value pairs.  If
+this attribute is set, the "lengthFieldName" attribute must define the key that
+corresponds to the length of the mult-line list.  This value is used to determine
+how many lines to read to reconstruct the multi-line list.
+
+For key-val list types, sometimes a key is missing for a given piece of data, so
+one can't construct the full key-value pairs.  Attempt to support this use case
+has been made by providing the "missingKeyIndex" and "missingKeyName" attributes.
+The "missingKeyIndex" will specify which index of the list corresponds to the 
+missing key.  The "missingKeyName" will allow the user to specify a vaue for this
+key, so that the <missingKeyName, data[missingKeyIndex]> is added to the data
+structure containing the respresentation for the list.
+
+Unlike default lists, there is currently no support for enabling the user to 
+specify which key_value pairs to keep, and which to discard.
 
 To make this work for other datasets, the user must override the following 
 methods:
@@ -89,15 +145,24 @@ methods:
             of the list). If the length is not specified, the program will 
             store all the data, otherwise it will take everything AfTER the
             first element.
+
+    post_process_element - this function is used to customize how an element
+            of a default (non-key value list) should be formatted once it's
+            been parsed.
             
-        post_process_element - this function can be tweaked for a given
-            dataset if we want further control for how to parse elements of
-            a list.
+    post_process_key_val_element - this function is used to customize how
+            an element of a key-value list should be formatted once it's
+            been parsed.
+            
+    is_data_missing_for_key - this function is used to used to tell the
+            script which list keys have missing data.  For all keys that
+            have key_val lists, we can specify which one them has missing
+            data.  For the ones that do have missing data, the script will
+            look up the values for "missingKeyName" and "missingKeyIndex"
+            to create the key-value pair for it.
+            
             
 TODO:
-    Add the "secondDelimiter" attribute to do further preprocessing of the
-    data after the elements of the list have been split.
-    
     Make more general without having to tweak.
     
     The program will still hold the condensed representation in memory 
@@ -264,8 +329,8 @@ def read_record(fileHandle, readLineCallback, schema, multiline, delim):
              # do specialized processing, otherwise, just store it in the 
              # dictionary
              if valueType == "list":
-                 record[lineSplit[0]] = handle_single_line_list(lineSplit[1], 
-                    valueDelimiter, fieldSchema, hasLength)
+                 record[lineSplit[0]] = handle_single_line_list(lineSplit[0], 
+                    lineSplit[1], valueDelimiter, fieldSchema, hasLength)
              elif valueType == "list-multiline":
                  record[lineSplit[0]] = handle_multi_line_list(lineSplit[0],
                     lineSplit[1], valueDelimiter, fieldSchema, fileHandle, 
@@ -290,10 +355,7 @@ def extract_key_value(lineSplit, schema):
         
     Returns:
         A list of field values corresponding to the indicies as specified by
-        the "keepIndicies" attribute.
-        
-        TODO: secondary delimeter if user wants to further refine the key-val
-            pairs.        
+        the "keepIndicies" attribute.        
     """    
     
     indiciesToRetain = get_schema_value_for_key(schema, "keepIndicies")
@@ -314,12 +376,89 @@ def extract_key_value(lineSplit, schema):
                 post_process_and_store(val)                
     return values
         
+def construct_dictionary(key, keyValList, fieldSchema):
+    """This function will construct a key-value mapping between the elements
+        as specified within the keyValList after it has been parsed. The
+        assumption is that the data in keyValList is ordered by a list of
+        <key, val> pairs.
+        
+        The function will also query the schema to see if there's a missing
+        key for a given piece of data, and if so, try to reconstruct it.
+        
+    Args:
+        key: the key of the record that we're processing.
+        keyValList: a list representation of the key/value mapping.
+        fieldSchema: the schema representing the record type that 
+            we're processing.
+        
+    Returns:
+        A dictionary that converts the keyValList into a dictionary, where
+            every even element is the key and the odd element is the value
+            for the corresponding key.    
+    """
+    
+    # figure out if we're missing some data
+    missingKeyIdx = get_schema_value_for_key(fieldSchema, "missingKeyIndex")
+    missingKeyName = get_schema_value_for_key(fieldSchema, "missingKeyName")
+
+    dataDict = dict()    
+    if is_data_missing_for_key(key) and missingKeyIdx and missingKeyName:
+        missingKeyIntIdx = int(missingKeyIdx)
+        # add the key to our dictionary representing the list
+        dataDict[missingKeyName] = keyValList[missingKeyIntIdx]
+        # remove the element with the missing key from the list because
+        # the list will next be used to initialize the dictionary
+        keyValList.pop(missingKeyIntIdx)
+
+    # TODO: error checking if only one is present but not the other
+
+    # construct the dictionary    
+    for idx, element in enumerate(keyValList):
+        if idx % 2 == 0:
+            dataDict[element] = keyValList[idx+1]
+
+    return dataDict
+    
+def load_element_key_val(key, value, valueDelimiter, fieldSchema):
+    """This function will performing the parsing required to convert
+        the key-value representation of the list as specified by the 
+        variable value to a parsed list, by using the "secondDelimiter"
+        attribute.
+        
+        It also invokes post_process_key_val_element to allow the user
+        to customize how to process the list.
+        
+    Args:
+        key: the key of the record that we're processing.
+        value: a string representation of the key/value list.
+        valueDelimiter: the initial delimiter for the key-value mapping.
+        fieldSchema: the schema representing the record type that 
+            we're processing.
+        
+    Returns:
+        A dictionary that converts the string representation of the list into 
+        a dictionary.    
+    """
+    
+    innerDelimiter = get_schema_value_for_key(fieldSchema, "secondDelimiter")
+    
+    keyValList = []
+    valueSplit = re.split(valueDelimiter, value)
+    for element in valueSplit:
+        innerSplit = re.split(innerDelimiter, element)
+        k, v = post_process_key_val_element(key, innerSplit)
+        keyValList.extend([el for el in [k, v] if el])
+
+    elementDict = construct_dictionary(key, keyValList, fieldSchema)            
+    return elementDict
+        
 def handle_multi_line_list(key, value, valueDelimiter, fieldSchema, fileHandle, hasLength):    
     """This method will properly parse a multi-line list of lists, where
         we define the number of lists on the first line and then list
         each individual list afterwards.
     
     Args:
+        key: the key of the record we're processing.
         value: the string version of the list. that is the entire list is
             specified as a string that is seperated by the valueDelimiter.
         valueDelimiter: the elements of the index after they have been split by
@@ -335,46 +474,46 @@ def handle_multi_line_list(key, value, valueDelimiter, fieldSchema, fileHandle, 
     Returns:
         A list of lists that corresponds to the set of parsed lists.
         
-    """    
-    
+    """                    
     if not hasLength:
-        print "need to provide length for multi-line list object"
-        raise Exception()
+        errMessage = "need to provide length for multi-line list object"
+        raise Exception(errMessage)
+      
+    data = dict()
+    hasMetadata = get_schema_value_for_key(fieldSchema, "hasMetadata")
+    if hasMetadata == "true":
+        data = load_element_key_val(key, value, valueDelimiter, fieldSchema)
+        lengthField = get_schema_value_for_key(fieldSchema, "lengthFieldName")
+        length = int(data[lengthField])
+    else:
+        #length = int(get_list_length(key, value))
+        length = int(value.strip())
     
     i = 0 
-    arrayElements = []       
-    length = int(get_list_length(key, value))
-    
-    """
-        TODO: create dictionary to hold metadata and then create
-        an entry for "reviews_list" that will hold a list of 
-        dictionaries for each category. 
-        
-        The decision to load the metadata is given by the schema
-        "hasMetadata" attribute for the multi-line-list
-        
-        So in the end, we have dict["reviews"]["downloaded"] or
-        dict["reviews"]["reviews_list"][0]["customer"]
-        
-        Make extract_key_value an overridable method that enables users
-        to override how to parse the list out.
-    """
-        
+    arrayElements = []             
     while i < length:
         element = read_line(fileHandle)
         # each inner list of the multi-line list does not have the
         # hasLength attribute set
-        arrayElements.append(handle_single_line_list(element, 
+        arrayElements.append(handle_single_line_list(key + "_list", element, 
                 valueDelimiter, fieldSchema, "false"))
         
         i = i+1
-                        
-    return arrayElements
+
+    data[key + "_list"] = arrayElements                        
+    return data
    
-def handle_single_line_list(value, valueDelimiter, fieldSchema, hasLength):
-    """This method will properly parse a single-line list.
+def handle_single_line_list(key, value, valueDelimiter, fieldSchema, hasLength):
+    """This method will properly parse a single-line list.  It looks up 
+        attributes such as "listType" to understand how to parse the list.
+        For lists that have a length appended on the front, it is only 
+        supported for default lists (non key-value pairs).
+        
+        However, for lists without the length appended at the front, we can
+        parse out a key-value mapping or default list.
     
     Args:
+        key: the key of the record we're processing.
         value: the string version of the list. that is the entire list is
             specified as a string that is seperated by the valueDelimiter.
         valueDelimiter: the elements of the index after they have been split by
@@ -395,10 +534,18 @@ def handle_single_line_list(value, valueDelimiter, fieldSchema, hasLength):
     lineSplit = map(preprocess, [y for y in re.split(valueDelimiter, value)])
     
     # now we need to extract out the relevant information
+    listType = get_schema_value_for_key(fieldSchema, "listType")    
+    
     if hasLength == "true":
-        return extract_key_value(lineSplit[1:], fieldSchema)
-        
-    return extract_key_value(lineSplit, fieldSchema)
+        if listType == "key_val":
+            raise Exception("key, val list with length not supported.")
+        else:        
+            return extract_key_value(lineSplit[1:], fieldSchema)
+    else:
+        if listType == "key_val":
+            return load_element_key_val(key, value, valueDelimiter, fieldSchema)
+        else:              
+            return extract_key_value(lineSplit, fieldSchema)
     
 def load_records(path, schema, processLine, modulo = 1000):
     """This method will load all the fields of inerest from the dataset.
@@ -453,8 +600,12 @@ def load_records(path, schema, processLine, modulo = 1000):
             
             if count % modulo == 1:
                 print "processed record #: " + str(count)
+                save_records(get_save_path(schema), records, schema)
+                records = []
+                
             count = count + 1
 
+    save_records(get_save_path(schema), records, schema)
     return records
         
 def save_records(path, records, schema, modulo=1000):
@@ -478,7 +629,7 @@ def save_records(path, records, schema, modulo=1000):
     """            
         
     count = 0    
-    with open(path, "w") as fileHandle:
+    with open(path, "a") as fileHandle:
         for record in records:
             json.dump(record, fileHandle)
             fileHandle.write("\n")
@@ -504,12 +655,13 @@ def process_line(line, schema):
     Returns:
         A list of length 2 represented by <key, value>.
     """            
+    lineStripped = line.strip()
     
     keyValSeperatorChar = get_schema_value_for_key(schema, "betweenKeyValDelimiter")
     keyValSeperatorChar = keyValSeperatorChar if keyValSeperatorChar else " "     
         
     preprocess = lambda x: x.strip()
-    lineSplit = map(preprocess, line.split(keyValSeperatorChar))
+    lineSplit = map(preprocess, lineStripped.split(keyValSeperatorChar))
 
     fieldKey = lineSplit[0] if lineSplit else ""
     fieldSchema = get_schema_value_for_key(get_fields_schema(schema), fieldKey)    
@@ -517,8 +669,10 @@ def process_line(line, schema):
         #print "field name %s does not exist." % (fieldKey)
         return None
         #raise Exception(errMessage)
-        
-    return [fieldKey, lineSplit[1] if type(lineSplit[1]) == str else ' '.join(lineSplit[1:])]
+     
+    idxNoKey = lineStripped.rfind(lineSplit[1])
+    return [fieldKey, lineSplit[1] if type(lineSplit[1]) == str \
+                                        else lineStripped[idxNoKey:]]
 
 ########### functions to override 
 def is_done(line, delim):
@@ -534,32 +688,6 @@ def is_done(line, delim):
     """            
     
     return line == delim
-
-def get_list_length(key, value):
-    """This function enables the user to customize how to parse the values
-        of the initial multiline list entry to get the number of inner
-        lists. This was too hard to generalize, so it might be best to just
-        provide the hook and user the user to tailor it to their dataset.
-    
-    Args:
-        value: the value portion a line after the initial split.
-        
-    Returns:
-        An int specifying the number of lists to parse.
-    """            
-    
-    # this is the hacky part that will need to be overriden some how for 
-    # new datasets since the format can vary so wildly for each dataset
-    preprocess = lambda x: x.strip()
-    lineSplit = map(preprocess, [y for y in re.split("\s+", value)])
-
-    if lineSplit:
-        if key == "reviews":
-            return int(lineSplit[3])
-        elif key == "categories":
-            return int(lineSplit[0])
-        else:
-            raise Exception("list length '" + key + "' parser not supported")            
         
 def post_process_element(value):
     """This function enables the user to customize how to parse a value
@@ -576,7 +704,64 @@ def post_process_element(value):
     
     # this is another method that will need to be overriden some how for 
     # new datasets since the format can vary so wildly for each dataset
-    return re.split("\s+", value)[0]                    
+    return re.split("\s+", value)[0]                   
+    
+def post_process_key_val_element(key, valueSplitList):
+    """ This function enables the user to further customize how to 
+        parse out an element of a key-val list once the firstDelimiter
+        and the secondDelimiter are applied. 
+        
+        This function was mainly used to handle cases like the following:
+            'total: 2  downloaded: 2  avg rating: 5'
+        Once we split by ":" and " ", the "avg" and "rating" are two elements
+        but should be one, so this function was provided to give the user
+        some control at customizing that.            
+
+    Args:
+        key: the key of the record we're processing.
+        valueListSplit: an element from the parsed list from the original 
+            string after the firstDelimiter and the secondDelimiter are 
+            applied.
+        
+    Returns:
+        A key/value pair after proper joining of the data elements.
+
+        It should pass back two
+        elements.
+    """
+    
+    valueSplitList = [v.strip() for v in valueSplitList if v]
+    if key == "reviews":
+        if len(valueSplitList) > 1:
+            val = "_".join(valueSplitList[1:]) \
+                if len(valueSplitList) > 2 else valueSplitList[1]        
+            return valueSplitList[0], val
+    else:
+        if len(valueSplitList) > 1:
+            return valueSplitList[0], valueSplitList[1]
+    
+    return valueSplitList[0], None                
+       
+def is_data_missing_for_key(key):
+    """This function was provided to allow the user to customize which
+        key for a given list has a missing key.  In this case, we know
+        that each of the list representing a review has a missing key for
+        the date, so we can return true for that.
+        
+        Based on the return value, the script will try to reconstruct the
+        key/value mapping.
+        
+        Args:
+            key: the key for the field of a record that we're processing.
+            
+        Returns:
+            True/False depending on which key is missing data.
+    """
+    if key == "reviews_list":
+        return True
+    else:
+        return False
+    
 ########### functions to override 
  
 def get_data_path(schema):
@@ -632,8 +817,13 @@ if __name__ == '__main__':
     DATA_DIR_PATH = os.path.dirname(path)
     schema = json.load(open(path))
     
+    savePath = get_save_path(schema)
+    if os.path.exists(savePath):
+        print "removing existing preprocessed file..."
+        os.remove(savePath)
+    
     records = load_records(get_data_path(schema), schema, process_line)
-    save_records(get_save_path(schema), records, schema)
+    #save_records(get_save_path(schema), records, schema)
     
     #debug(records)
     #print str(schema)

@@ -18,10 +18,12 @@
 		   "keep": "true"
 	    },
 	    "group": {
-		   "type": "string"
+		   "type": "string",
+		   "keep": "true"
 	    },
 	    "salesrank": {
-     		   "type": "numeric"
+     		   "type": "numeric",
+		   "keep": "true"
 	     },
     	    "similar": {
 		   "type": "list",
@@ -34,17 +36,21 @@
 		   "hasLength": "true",
 		   "type": "list-multiline",
 		   "element_type": "string",
-		   "firstDelimiter": "|",
-		   "keep":"true",
-		   "keepIndicies": "1"
+		   "firstDelimiter": "\\|",
+		   "keep": "true"
 	    },
     	    "reviews": {
 		   "hasLength": "true",
 		   "type": "list-multiline",
+		   "hasMetadata": "true",
+		   "lengthFieldName": "downloaded",
 		   "element_type": "string",
 		   "firstDelimiter": ":\\s+",
-		   "keep":"true",
-		   "keepIndicies": "1"
+		   "secondDelimiter": "\\s+",
+		   "missingKeyIndex": "0",
+		   "missingKeyName": "date",
+		   "listType": "key_val",
+		   "keep": "true"
 	    }    
 	}
 }

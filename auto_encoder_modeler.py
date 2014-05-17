@@ -338,6 +338,38 @@ def generate_dense_attr_vec(idxVector):
             
     return row, col, data
 
+def generate_svm_lite_attr_vec(idxVector):
+    row = []
+    col = []
+    data = []
+ 
+    def preprocess(rowId, featureVector):
+        r = []
+        c = []
+        d = []
+        for feature in featureVector:
+            featureSplit = feature.split(":")
+            idx, val = int(featureSplit[0]), float(featureSplit[1])
+            
+            r.append(rowId)
+            c.append(idx)
+            d.append(val)
+    
+        return r, c, d
+            
+    for idx, val in enumerate(idxVector):
+        if type(val) == list:
+            r, c, d = preprocess(idx, val)
+
+            row.extend(r)
+            col.extend(c)
+            data.extend(d)
+        else:
+            raise Exception("value must be of type list")
+            
+    return row, col, data
+    
+
 def generate_sparse_feature(x, y, total, callback):    
     """This function will generate the sparse matrix for a given minibath
         and return to the caller for processing.
@@ -367,12 +399,28 @@ def generate_sparse_feature(x, y, total, callback):
 
     
     return sampleMatrix, labelMatrix
-    
+
+def generate_feature(record, count):
+    jsonObject = json.loads(record)
+    if "total" in jsonObject:
+        return jsonObject["total"], None
+    else:
+        coords = jsonObject.values()[0]
+        return coords["x"], coords["y"]    
+        
+def generate_feature_svm_lite(record, count):
+    jsonObject = json.loads(record)
+    if "total" in jsonObject:
+        return jsonObject["total"], None
+    else:
+        return jsonObject["x"], jsonObject["x"]    
+        
 def test_dA(dataset, learning_rate=0.10, training_epochs=15, #batch_size=20, 
             n_visible=58, n_hidden=100, modulo=100, W=None, bhid=None, 
             bvis=None, writeReconstruct=None, 
             feature_constructor_callback=generate_one_hot_encoding_attr_vec,
-            activation=None, saveParams=None, corruption_level=0.0):
+            activation=None, saveParams=None, corruption_level=0.0,
+            inputProcessFn=generate_feature):
 
     """
         Function to run the auto-encoder on the data.
@@ -401,13 +449,6 @@ def test_dA(dataset, learning_rate=0.10, training_epochs=15, #batch_size=20,
     
     sample = []
     label = []
-    def generate_feature(record, count):
-        jsonObject = json.loads(record)
-        if "total" in jsonObject:
-            return jsonObject["total"], None
-        else:
-            coords = jsonObject.values()[0]
-            return coords["x"], coords["y"]
 
     # create the generator for leading features                            
     #feature_generator = load_feature(dataset, generate_feature)    
@@ -457,7 +498,7 @@ def test_dA(dataset, learning_rate=0.10, training_epochs=15, #batch_size=20,
     epoch = 0
     for epoch in xrange(training_epochs):        
 
-        c = process_input_file(dataset, generate_feature, train, 
+        c = process_input_file(dataset, inputProcessFn, train, 
                                feature_constructor_callback, modulo)
         print 'Training epoch %d, cost ' % epoch, numpy.mean(c)
 
@@ -500,7 +541,7 @@ def test_dA(dataset, learning_rate=0.10, training_epochs=15, #batch_size=20,
         with open(get_reconstruction_output_path(dataset), "a+") as handle:
             handle.write(json.dumps({"total": n_hidden}) + "\n")
             
-        process_input_file(dataset, generate_feature, reconstruct_input, 
+        process_input_file(dataset, inputProcessFn, reconstruct_input, 
                            feature_constructor_callback, modulo)
         
         
@@ -684,6 +725,8 @@ if __name__ == '__main__':
                       action="store_true", help="write out re-construction of input")
     parser.add_option("-d", "--dense-type", dest="dense", 
                       action="store_true", help="construct features from dense data")
+    parser.add_option("-l", "--svmlite-type", dest="svmlite", 
+                      action="store_true", help="construct features from svmlite format")                      
     parser.add_option("-s", "--save-params", dest="params", 
                       action="store_true", help="save parameters after training")
     
@@ -703,9 +746,13 @@ if __name__ == '__main__':
         reconstruct = True
     else:
         reconstruct = False
-        
+
+    pfn = generate_feature        
     if options.dense:
         fn = generate_dense_attr_vec
+    elif options.svmlite:
+        fn = generate_svm_lite_attr_vec
+        pfn = generate_feature_svm_lite
     else:
         fn = generate_one_hot_encoding_attr_vec
         
@@ -728,7 +775,8 @@ if __name__ == '__main__':
         test_dA(dataset = path_to_file, learning_rate=0.0167687874055430384, 
                 training_epochs=20, n_visible=130443, n_hidden=100,
                 W=encodingMatrix, bvis=hiddenBias, writeReconstruct=reconstruct,
-                feature_constructor_callback=fn, saveParams=save_params)                                    
+                feature_constructor_callback=fn, saveParams=save_params,
+                inputProcessFn=pfn)                                    
     elif not os.path.exists(get_params_file_path(path_to_file)):
         # 1. train 20 iterations for first layer with .25 step size with 100 
         # hidden units and T.nnet.sigmoid activation to get positive values,
@@ -736,12 +784,12 @@ if __name__ == '__main__':
         # 2. to train second layer, use -d for dense features with .25 step
         # size on 20 iterations with 100 hidden units and T.nnet.sigmoid
         # activation, and no hidden bias
-        test_dA(learning_rate=0.25, training_epochs=20,
+        test_dA(learning_rate=0.25, training_epochs=5,
                 #dataset = path_to_file, n_visible=100, \
-                dataset = path_to_file, n_visible=58, \
-                n_hidden=100, writeReconstruct=reconstruct,
-                feature_constructor_callback=fn, activation=None,
-                saveParams=save_params)  
+                dataset = path_to_file, n_visible=7802, \
+                n_hidden=10, writeReconstruct=reconstruct,
+                feature_constructor_callback=fn, activation=T.nnet.sigmoid,
+                saveParams=save_params, inputProcessFn=pfn)  
                 
         #test_dA(learning_rate=0.25, training_epochs=30, 
         #        dataset = path_to_file, n_visible=58, \

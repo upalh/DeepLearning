@@ -91,7 +91,11 @@ class HiddenLayer(object):
             #if activation == theano.tensor.nnet.sigmoid:
             #    W_values *= 4
 
-            W = theano.shared(value=W_values, name='W', borrow=True)
+            W_initial = theano.shared(value=W_values, name='W', borrow=True)
+        elif type(W) == numpy.ndarray:
+            W_initial = theano.shared(value=W, name='W', borrow=True)
+        else:
+            W_initial = W
 
         if b is not None:
             if type(b) == numpy.ndarray:
@@ -105,7 +109,7 @@ class HiddenLayer(object):
         #    b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
         #    b = theano.shared(value=b_values, name='b', borrow=True)
 
-        self.W = W
+        self.W = W_initial
         self.b = b_initial
 
         self.activation = activation
@@ -148,7 +152,7 @@ class SdA(object):
 
     def __init__(self, input, label, numpy_rng, theano_rng=None, n_ins=784,
                  hidden_layers_sizes=[500, 500], activation=T.nnet.sigmoid, 
-                 b=None):
+                 b=None, W=None):
         """ This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -218,12 +222,22 @@ class SdA(object):
                 layer_input = self.sigmoid_layers[-1].output
                 layer_output = self.sigmoid_layers[-1].output
 
+            if b is not None:
+                b_vec = b[i] 
+            else:
+                b_vec = None
+            
+            if W is not None:
+                W_mat = W[i] 
+            else:
+                W_mat = None
+
             sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
                                         n_in=input_size,
                                         n_out=hidden_layers_sizes[i],
                                         activation=activation,
-                                        b=b) #T.nnet.sigmoid)
+                                        b=b_vec, W=W_mat) #T.nnet.sigmoid)
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
             # its arguably a philosophical question...
@@ -347,7 +361,70 @@ def load_feature(path_to_file, callback):
             yield key, value
     
 
-def generate_sparse_feature(x, y, total):    
+def generate_one_hot_encoding_attr_vec(idxVector):
+    row = []
+    col = []
+    data = []
+ 
+    for idx, val in enumerate(idxVector):
+        if type(val) == list:
+            row.extend([idx for c in val])
+            col.extend([c for c in val])
+            data.extend([1.0 for c in val])
+        else:
+            row.append(idx)
+            col.append(val)
+            data.append(1.0)                
+            
+    return row, col, data
+
+def generate_dense_attr_vec(idxVector):
+    row = []
+    col = []
+    data = []
+ 
+    for idx, val in enumerate(idxVector):
+        if type(val) == list:
+            row.extend([idx for c in val])
+            col.extend([i for i, c in enumerate(val)])
+            data.extend([c for c in val])
+        else:
+            raise Exception("value must be of type list")
+            
+    return row, col, data
+
+def generate_svm_lite_attr_vec(idxVector):
+    row = []
+    col = []
+    data = []
+ 
+    def preprocess(rowId, featureVector):
+        r = []
+        c = []
+        d = []
+        for feature in featureVector:
+            featureSplit = feature.split(":")
+            idx, val = int(featureSplit[0]), float(featureSplit[1])
+            
+            r.append(rowId)
+            c.append(idx)
+            d.append(val)
+    
+        return r, c, d
+            
+    for idx, val in enumerate(idxVector):
+        if type(val) == list:
+            r, c, d = preprocess(idx, val)
+
+            row.extend(r)
+            col.extend(c)
+            data.extend(d)
+        else:
+            raise Exception("value must be of type list")
+            
+    return row, col, data
+    
+def generate_sparse_feature(x, y, total, callback):    
     """This function will generate the sparse matrix for a given minibath
         and return to the caller for processing.
         
@@ -367,36 +444,36 @@ def generate_sparse_feature(x, y, total):
     
     if len(x) != len(y):
         raise Exception("dimensions are not the same.")
-
-    def generate_attr_vec(idxVector):
-        row = []
-        col = []
-        data = []
- 
-        for idx, val in enumerate(idxVector):
-            if type(val) == list:
-                row.extend([idx for c in val])
-                col.extend([c for c in val])
-                data.extend([1.0 for c in val])
-            else:
-                row.append(idx)
-                col.append(val)
-                data.append(1.0)                
-                
-        return row, col, data
-
-    rowL, colL, dataL = generate_attr_vec(x)         
-    rowS, colS, dataS = generate_attr_vec(y)
+    
+    rowL, colL, dataL = callback(x)         
+    rowS, colS, dataS = callback(y)
 
     sampleMatrix = scipy.sparse.coo_matrix( (dataL, (rowL, colL)), shape=(len(x), total), dtype=numpy.float32)
     labelMatrix = scipy.sparse.coo_matrix( (dataS, (rowS, colS)), shape=(len(x), total), dtype=numpy.float32)
-
     
     return sampleMatrix, labelMatrix
-    
+
+def generate_feature(record, count):
+    jsonObject = json.loads(record)
+    if "total" in jsonObject:
+        return jsonObject["total"], None
+    else:
+        coords = jsonObject.values()[0]
+        return coords["x"], coords["y"]    
+        
+def generate_feature_svm_lite(record, count):
+    jsonObject = json.loads(record)
+    if "total" in jsonObject:
+        return jsonObject["total"], None
+    else:
+        return jsonObject["x"], jsonObject["x"]    
+
 def test_SdA(dataset, learning_rates=[0.10], training_epochs=15, batch_size=20, 
             n_visible=58, n_hidden=[100], modulo=100, W=None, bhid=None, 
-            bvis=None, corruption_levels=[0.0], activation=T.nnet.sigmoid):
+            bvis=None, corruption_levels=[0.0], activation=T.nnet.sigmoid,
+            feature_constructor_callback=generate_one_hot_encoding_attr_vec,
+            saveParams=None, corruption_level=0.0, inputProcessFn=generate_feature):
+
                 
     """
         Function to run the auto-encoder on the data.
@@ -450,18 +527,8 @@ def test_SdA(dataset, learning_rates=[0.10], training_epochs=15, batch_size=20,
     pretraining_fns = sda.pretraining_functions(sample, label, learning_rate, 
                                                 corruption_level)
                                                 
-    sample = []
-    label = []
-    def generate_feature(record, count):
-        jsonObject = json.loads(record)
-        if "total" in jsonObject:
-            return jsonObject["total"], None
-        else:
-            coords = jsonObject.values()[0]
-            return coords["x"], coords["y"]
-
     # create the generator for leading features                            
-    feature_generator = load_feature(dataset, generate_feature)    
+    feature_generator = load_feature(dataset, inputProcessFn)    
     total, _ = feature_generator.next()    
     
     ###############
@@ -491,7 +558,7 @@ def test_SdA(dataset, learning_rates=[0.10], training_epochs=15, batch_size=20,
                     # if we've accumulated enough samples, construct the sparse
                     # matrix representation and call theano to train on it
                     if count % MINI_BATCH_SIZE == 0:                    
-                        samples, labels = generate_sparse_feature(miniBatchIn, miniBatchOut, total)            
+                        samples, labels = generate_sparse_feature(miniBatchIn, miniBatchOut, total, feature_constructor_callback)            
                         error = pretraining_fns[i](samples, labels, 
                             corruption_levels[i], learning_rates[i])
                         c.append(error)                            
@@ -508,12 +575,12 @@ def test_SdA(dataset, learning_rates=[0.10], training_epochs=15, batch_size=20,
                     # our vector. if we do, train the net on that and then
                     # start re-reading the data from the beginning.
                     if miniBatchIn:
-                        samples, labels = generate_sparse_feature(miniBatchIn, miniBatchOut, total)            
+                        samples, labels = generate_sparse_feature(miniBatchIn, miniBatchOut, total, feature_constructor_callback)            
                         error = pretraining_fns[i](samples, labels, 
                             corruption_levels[i], learning_rates[i])
                         c.append(error)        
     
-                    feature_generator = load_feature(dataset, generate_feature)    
+                    feature_generator = load_feature(dataset, inputProcessFn)    
                     # skip the total json object                
                     feature_generator.next()
                         
@@ -527,9 +594,19 @@ def test_SdA(dataset, learning_rates=[0.10], training_epochs=15, batch_size=20,
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
     # we want to write out the parameters now, so that we can read it in
-    # later and experiment with it.
-    #with open(get_params_file_path(dataset), "w") as fileHandle:   
-    #    numpy.savez(fileHandle, W = da.W.get_value(), b = da.b_prime.get_value())
+    # later and experiment with it.        
+    if saveParams:    
+        with open(get_params_file_path(dataset), "w") as fileHandle:   
+            W_mat = []
+            b_mat = []
+            for layer in sda.sigmoid_layers:
+                W_mat.append(layer.W.get_value())
+                if layer.b:
+                    b_mat.append(layer.b.get_value())
+                
+            numpy.savez(fileHandle, n_hidden=n_hidden, 
+                        learning_rates=learning_rates, 
+                        corruption_levels=corruption_levels, W=W_mat, b=b_mat)
 
     
 def get_params_file_path(feature_file):    
@@ -663,10 +740,10 @@ if __name__ == '__main__':
                       help="path to training data", metavar="FILE")
     parser.add_option("-t", "--title-file", dest="titleFile", action="store",
                       help="path to asin to title mapping", metavar="FILE")
-    parser.add_option("-w", "--write-reconstruction", dest="reconstruct", 
-                      action="store_true", help="write out re-construction of input")
     parser.add_option("-d", "--dense-type", dest="dense", 
                       action="store_true", help="construct features from dense data")
+    parser.add_option("-l", "--svmlite-type", dest="svmlite", 
+                      action="store_true", help="construct features from svmlite format")                      
     parser.add_option("-s", "--save-params", dest="params", 
                       action="store_true", help="save parameters after training")
     
@@ -682,15 +759,13 @@ if __name__ == '__main__':
     else:
         asin_to_title = None
 
-    '''
-    TODO: finish implementing
-    if options.reconstruct:
-        reconstruct = True
-    else:
-        reconstruct = False
-        
+
+    pfn = generate_feature        
     if options.dense:
         fn = generate_dense_attr_vec
+    elif options.svmlite:
+        fn = generate_svm_lite_attr_vec
+        pfn = generate_feature_svm_lite
     else:
         fn = generate_one_hot_encoding_attr_vec
         
@@ -698,7 +773,6 @@ if __name__ == '__main__':
         save_params = True
     else:
         save_params = False
-    '''
     
     DATA_DIR_PATH = os.path.dirname(path_to_file)    
     NUM_DOCS = 1
@@ -709,15 +783,25 @@ if __name__ == '__main__':
         params = load_params_file(path_to_file)
         encodingMatrix = params['W']
         hiddenBias = params['b']            
+        learning_rates = params['learning_rates']
+        n_hidden = params['n_hidden']
             
-        test_SdA(dataset = path_to_file, learning_rate=0.0027689, 
-                training_epochs=20, n_visible=130443, n_hidden=[100],
-                W=encodingMatrix, bvis=hiddenBias, activation=None,
-                bhid=None)                                    
+
+        hiddenBias = hiddenBias if len(hiddenBias) > 0 else None
+        encodingMatrix = encodingMatrix if len(encodingMatrix) > 0 else None
+                
+        test_SdA(batch_size = MINI_BATCH_SIZE, dataset=path_to_file, 
+                learning_rates=[0.25], training_epochs=1, n_visible=64, 
+                n_hidden=n_hidden,W=encodingMatrix, bvis=None, 
+                activation=T.nnet.sigmoid, bhid=hiddenBias, 
+                feature_constructor_callback=fn, saveParams=save_params, 
+                inputProcessFn=pfn)                                    
     elif not os.path.exists(get_params_file_path(path_to_file)):
-        test_SdA(batch_size = MINI_BATCH_SIZE, learning_rate=0.25, \
-            training_epochs=20, dataset = path_to_file, n_visible=58, \
-            n_hidden=[100, 100], activation=T.nnet.sigmoid, bhid=None)
+        test_SdA(batch_size = MINI_BATCH_SIZE, learning_rates=[0.25], \
+            training_epochs=1, dataset = path_to_file, n_visible=64, \
+            n_hidden=[10], activation=T.nnet.sigmoid, bhid=None,
+            feature_constructor_callback=fn, saveParams=save_params, 
+            inputProcessFn=pfn)
         
         #test_SdA(batch_size = MINI_BATCH_SIZE, learning_rate=0.25, \
         #    training_epochs=30, dataset = path_to_file, n_visible=58, \

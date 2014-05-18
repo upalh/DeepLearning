@@ -159,7 +159,8 @@ def runExperiment(trainFile, testFile, trainOnLabel, total, learning_rate=[0.10]
             training_epochs=15, batch_size=20, n_visible=4, n_hidden=[100], 
             modulo=100, corruption_level=[0.0], activation=None, 
             recordParserCallback=generate_feature_for_csv_record,
-            attr_vec_fn=generate_attr_vec, normalize=False, params=None):
+            attr_vec_fn=generate_attr_vec, normalize=False, params=None,
+            useMomentum=False, momentumRate=0.90):
 
     """
         Function to run the auto-encoder on the data.
@@ -296,21 +297,12 @@ def load_params_file(feature_file):
 def get_params_file(feature_file):        
     return os.path.join(DATA_DIR_PATH, os.path.basename(
         feature_file).split(".")[0] + "_params.out")
-    
-def train_autoEncoder(trainFile, testFile, recordParserCallback, n_visible, 
-                      n_hidden, learning_rates, callback, corruption_levels, 
-                      activation, training_epochs, legend, normalize, 
-                      generate_attr_vec_callback, total, layer_no, params=None, 
-                      modulo=1000):
 
-    if len(corruption_levels) != len(n_hidden):
-        raise Exception("corruption level not provided for each layer...will use default")
-
-    if len(learning_rates) != len(n_hidden):
-        raise Exception("learning rates not provided for each layer...will use default")
-        
-    legend.append("SAE %d layers" % len(n_hidden))    
-    
+def plot_learning_curve(trainingFile, testFile, recordParserCallback, 
+          generate_attr_vec_callback, corruption_levels, 
+          learning_rates, momentumRate, training_epochs, n_visible, n_hidden,
+          activation, useMomentum=False, batch_size=1000, modulo=1000):
+              
     sample = sparse.csc_matrix(name='s', dtype='float32') 
     label = sparse.csc_matrix(name='l', dtype='float32')      
     x = sparse.csc_matrix(name='x', dtype='float32')  
@@ -318,6 +310,7 @@ def train_autoEncoder(trainFile, testFile, recordParserCallback, n_visible,
 
     corruption_level = T.scalar('corruption')  # % of corruption to use
     learning_rate = T.scalar('lr')  # learning rate to use
+    momentum_rate = T.scalar('momentum')  # learning rate to use
 
     rng = numpy.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
@@ -332,46 +325,97 @@ def train_autoEncoder(trainFile, testFile, recordParserCallback, n_visible,
                     
     sda = SdA(numpy_rng=rng, theano_rng=theano_rng, n_ins=n_visible,
               hidden_layers_sizes=n_hidden, input=x, label=y,
-              activation=activation, W=W, b=b)
+              activation=activation, W=W, b=b, useMomentum=useMomentum)
                   #activation=activation, b=bhid_value)
             
     pretraining_fns = sda.pretraining_functions(sample, label, learning_rate, 
-                                                corruption_level)
+                                                corruption_level, momentum_rate)
+        
+    
+    pl.clf()    
+    def plotCurve(x, y, label):
+        # Compute ROC curve and area the curve
+        pl.plot(x, y, label=label)
+        #pl.plot([0, 1], [0, 1], 'k--')
+        #pl.xlim([0.0, 1.0])
+        #pl.ylim([0.0, 1.0])
+        #pl.xlabel('False Positive Rate')
+        #pl.ylabel('True Positive Rate')
+        #pl.title('Receiver operating characteristic')
+        pl.legend(loc="lower right")
+        #pl.show()        
         
     #sampleMatrix = generate_feature(trainData, total, generate_attr_vec_callback)
-    def train():
-        feature_generator = load_feature(trainFile, recordParserCallback) 
-        total, _ = feature_generator.next()
+    x = []
+    y = []
+    y_cost = []
+    for iteration in range(1, 5):            
+        cost = train(recordParserCallback, generate_attr_vec_callback, pretraining_fns, 
+              learning_rates, corruption_levels, momentumRate, training_epochs, 
+              batch_size=iteration*batch_size, modulo=modulo, 
+              stopping_fn=stop_after_mini_batch)
+        x.append(iteration)
+        y.append(cost)
         
-        for idx, fn in enumerate(pretraining_fns):
-            print "training layer #%s" % str(idx)                
-            for i in range(0, training_epochs):
-                error = 0
-                count = 0
-                while True:
-                    try:
-                        sample, label = feature_generator.next()                     
-                        sampleMatrix = generate_feature([sample], total, generate_attr_vec_callback)
-                        error = error + fn(sampleMatrix, sampleMatrix, 
-                                           corruption_levels[idx], 
-                                           learning_rates[idx])                   
-                        count = count + 1
-                        if count % modulo == 0:
-                            print "processed " + str(count) + " reccords"
-                                            
-                    except StopIteration:
-                        break
-    
-                cost = float(error/count)
-                print "epoch cost " + str(i) + ": " + str(cost)
-            
-    if not params:
-        train()
+        print "about to test..."    
+        testCost = test(testFile, recordParserCallback, generate_attr_vec_callback, sda)
+        y_cost.append(testCost)
         
     # plot without before feature learning
     #plot_transformed_vectors(testMatrix.toarray(), testDataLabel, title="before feature learning")
-    print "about to test..."
+    #print "about to test..."    
+    #test(testFile, recordParserCallback, generate_attr_vec_callback, sda)
+     
+    plotCurve(x, y, "train")
+    plotCurve(x, y_cost, "test")
+         
+    pl.show()
     
+def stop_after_mini_batch(count, batch_size):
+    return count % batch_size == 0
+
+def iterate_dataset(count, batch_size):
+    return True
+    
+def train(trainFile, recordParserCallback, generate_attr_vec_callback, 
+          pretraining_fns, corruption_levels, learning_rates,
+          momentumRate, training_epochs, batch_size=1, modulo=1000,
+          stopping_fn=iterate_dataset):
+              
+    feature_generator = load_feature(trainFile, recordParserCallback) 
+    total, _ = feature_generator.next()
+    
+    for idx, fn in enumerate(pretraining_fns):
+        print "training layer #%s" % str(idx)                
+        for i in range(0, training_epochs):
+            error = 0
+            count = 0
+            miniBatch = []
+            while stopping_fn(count, batch_size):
+                try:
+                    sample, label = feature_generator.next()                     
+                    miniBatch.append(sample)
+                    
+                    if len(miniBatch) % batch_size == 0:
+                        sampleMatrix = generate_feature(miniBatch, total, generate_attr_vec_callback)
+                        error = error + fn(sampleMatrix, sampleMatrix, 
+                                           corruption_levels[idx], 
+                                           learning_rates[idx], momentumRate)                   
+                        miniBatch = []
+                        
+                    count = count + 1
+                    if count % modulo == 0:
+                        print "processed " + str(count) + " reccords"
+                                        
+                except StopIteration:
+                    break
+
+            cost = float(error/count)
+            print "epoch cost " + str(i) + ": " + str(cost)
+            
+    return cost
+
+def test(testFile, recordParserCallback, generate_attr_vec_callback, sda, modulo=1):
     count = 0
     error = 0
     errorVectors = []
@@ -400,7 +444,61 @@ def train_autoEncoder(trainFile, testFile, recordParserCallback, n_visible,
 
     cost = float(error/count)
     print "test cost: " + str(cost)
+    
+    return cost
+    
+def train_autoEncoder(trainFile, testFile, recordParserCallback, n_visible, 
+                      n_hidden, learning_rates, callback, corruption_levels, 
+                      activation, training_epochs, legend, normalize, 
+                      generate_attr_vec_callback, total, layer_no, params=None, 
+                      modulo=1000, useMomentum=False, momentumRate=0.90):
 
+    if len(corruption_levels) != len(n_hidden):
+        raise Exception("corruption level not provided for each layer...will use default")
+
+    if len(learning_rates) != len(n_hidden):
+        raise Exception("learning rates not provided for each layer...will use default")
+        
+    legend.append("SAE %d layers" % len(n_hidden))    
+    
+    sample = sparse.csc_matrix(name='s', dtype='float32') 
+    label = sparse.csc_matrix(name='l', dtype='float32')      
+    x = sparse.csc_matrix(name='x', dtype='float32')  
+    y = sparse.csc_matrix(name='y', dtype='float32')  
+
+    corruption_level = T.scalar('corruption')  # % of corruption to use
+    learning_rate = T.scalar('lr')  # learning rate to use
+    momentum_rate = T.scalar('momentum')  # learning rate to use
+
+    rng = numpy.random.RandomState(123)
+    theano_rng = RandomStreams(rng.randint(2 ** 30))
+
+    #bhid_value = numpy.zeros(n_hidden, dtype=theano.config.floatX)                           
+    W = None
+    b = None
+    if params is not None:    
+        W = params['W']
+        if len(params['b']) == len(params['W']):
+            b = params['b']
+                    
+    sda = SdA(numpy_rng=rng, theano_rng=theano_rng, n_ins=n_visible,
+              hidden_layers_sizes=n_hidden, input=x, label=y,
+              activation=activation, W=W, b=b, useMomentum=useMomentum)
+                  #activation=activation, b=bhid_value)
+            
+    pretraining_fns = sda.pretraining_functions(sample, label, learning_rate, 
+                                                corruption_level, momentum_rate)
+        
+    #sampleMatrix = generate_feature(trainData, total, generate_attr_vec_callback)            
+    if not params:
+        train(recordParserCallback, generate_attr_vec_callback, pretraining_fns, 
+              learning_rates, corruption_levels, momentumRate, training_epochs, 
+              batch_size=1, modulo=modulo)
+        
+    # plot without before feature learning
+    #plot_transformed_vectors(testMatrix.toarray(), testDataLabel, title="before feature learning")
+    print "about to test..."    
+    test(testFile, recordParserCallback, generate_attr_vec_callback, sda)
 
     #sampleMatrix = generate_feature(trainData, total, generate_attr_vec_callback)
     #errorVector = sda.get_reconstruction_errors(sampleMatrix.tocsc())   
@@ -580,6 +678,8 @@ if __name__ == "__main__":
                       help="path to test data", metavar="FILE")                      
     parser.add_option("-i", "--initialize", dest="params", action="store_true",
                       help="initialize net params")
+    parser.add_option("-d", "--debug", dest="debug", action="store_true",
+                      help="plot learning curve")
     
     (options, args) = parser.parse_args()
 
@@ -604,6 +704,11 @@ if __name__ == "__main__":
         params = load_params_file(fileName)
     else:
         params = None
+    
+    if options.debug:
+        debug = True
+    else:
+        debug = False
         
     #runExperiment(fileName, label, learning_rate=0.10, training_epochs=30, 
     #        n_visible=4, n_hidden=10, modulo=100, 
@@ -613,9 +718,18 @@ if __name__ == "__main__":
     #        corruption_level=[0.9, 0.8], activation=T.nnet.sigmoid,
     #        recordParserCallback=generate_feature_for_csv_record,
     #        attr_vec_fn=generate_attr_vec, normalize=True)
-    runExperiment(fileName, fileNameTest, label, total=64, learning_rate=[.25], 
-            training_epochs=1, n_visible=64, n_hidden=[10], 
-            modulo=100, corruption_level=[0.0], activation=T.nnet.sigmoid,    
-            recordParserCallback=generate_feature_for_json_record,
-            attr_vec_fn=generate_svm_lite_attr_vec, normalize=False, 
-            params=params)
+    if debug:                        
+        plot_learning_curve(fileName, fileNameTest, 
+              recordParserCallback=generate_feature_for_json_record,
+              attr_vec_fn=generate_svm_lite_attr_vec, corruption_levels=[0.0], 
+              learning_rate=[0.25], momentumRate=0.90, training_epochs=20, 
+              n_visible=64, n_hidden=[10], activation=T.nnet.sigmoid, 
+              useMomentum=False, batch_size=1000, modulo=1000)
+    else:
+        runExperiment(fileName, fileNameTest, label, total=64, learning_rate=[.25], 
+                training_epochs=1, n_visible=64, n_hidden=[10], 
+                modulo=100, corruption_level=[0.0], activation=T.nnet.sigmoid,    
+                recordParserCallback=generate_feature_for_json_record,
+                attr_vec_fn=generate_svm_lite_attr_vec, normalize=False, 
+                params=params)
+        
